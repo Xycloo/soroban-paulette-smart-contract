@@ -1,23 +1,23 @@
 #![cfg(any(test, feature = "testutils"))]
 
-use crate::VaultContractClient;
+use crate::{Auth, PauletteContractClient};
 use soroban_auth::Identifier;
 
-use soroban_sdk::{BigInt, BytesN, Env};
+use soroban_sdk::{accounts::Account, AccountId, BigInt, BytesN, Env};
 
 pub fn register_test_contract(e: &Env, contract_id: &[u8; 32]) {
     let contract_id = BytesN::from_array(e, contract_id);
-    e.register_contract(&contract_id, crate::VaultContract {});
+    e.register_contract(&contract_id, crate::PauletteContract {});
 }
 
-pub struct VaultContract {
+pub struct PauletteContract {
     env: Env,
     contract_id: BytesN<32>,
 }
 
-impl VaultContract {
-    fn client(&self) -> VaultContractClient {
-        VaultContractClient::new(&self.env, &self.contract_id)
+impl PauletteContract {
+    fn client(&self) -> PauletteContractClient {
+        PauletteContractClient::new(&self.env, &self.contract_id)
     }
 
     pub fn new(env: &Env, contract_id: &[u8; 32]) -> Self {
@@ -36,15 +36,64 @@ impl VaultContract {
         self.client().nonce()
     }
 
-    pub fn deposit(&self, from: Identifier, amount: BigInt) {
-        self.client().deposit(&from, &amount)
+    pub fn get_price(&self, id: BytesN<16>) -> BigInt {
+        self.client().get_price(&id)
     }
 
-    pub fn withdraw(&self, to: Identifier, shares: BigInt) {
-        self.client().withdraw(&to, &shares)
+    pub fn new_office(
+        &self,
+        admin: AccountId,
+        id: BytesN<16>,
+        auction: BytesN<32>,
+        price: BigInt,
+        min_price: BigInt,
+        slope: BigInt,
+    ) {
+        self.env.set_source_account(&admin);
+        self.client().new_office(
+            &Auth {
+                sig: soroban_auth::Signature::Invoker,
+                nonce: BigInt::zero(&self.env),
+            },
+            &id,
+            &auction,
+            &price,
+            &min_price,
+            &slope,
+        )
     }
 
-    pub fn get_shares(&self, id: &Identifier) -> BigInt {
-        self.client().get_shares(id)
+    pub fn buy(&self, id: BytesN<16>, buyer: Identifier) {
+        self.client().buy(&id, &buyer);
     }
+
+    pub fn revoke(
+        &self,
+        admin: AccountId,
+        id: BytesN<16>,
+        auction: BytesN<32>,
+        price: BigInt,
+        min_price: BigInt,
+        slope: BigInt,
+    ) {
+        self.env.set_source_account(&admin);
+        self.client().new_office(
+            &Auth {
+                sig: soroban_auth::Signature::Invoker,
+                nonce: BigInt::zero(&self.env),
+            },
+            &id,
+            &auction,
+            &price,
+            &min_price,
+            &slope,
+        )
+    }
+
+    /*
+    TODO: revoke testutil
+    pub fn revoke(&self)  {
+            self.client().revoke(id, auction, price, min_price, slope)
+        }
+    */
 }

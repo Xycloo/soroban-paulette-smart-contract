@@ -18,6 +18,12 @@ mod auction {
     soroban_sdk::contractimport!(file = "./soroban_dutch_auction_contract.wasm");
 }
 
+trait Arithmetic<Rhs = Self> {
+    type Output;
+
+    fn add(self, rhs: Rhs) -> Self::Output;
+}
+
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
@@ -40,14 +46,20 @@ pub struct Auth {
 #[contracttype]
 pub struct TimeStamp(pub u64);
 
+impl Arithmetic<TimeStamp> for TimeStamp {
+    type Output = TimeStamp;
+
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
 #[derive(Clone)]
 #[contracttype]
 pub struct Office {
     pub user: Identifier,
     pub expires: TimeStamp,
     pub latest: TimeStamp,
-    pub interval: u64,
-    pub auction: BytesN<32>,
 }
 
 fn get_contract_id(e: &Env) -> Identifier {
@@ -57,12 +69,17 @@ fn get_contract_id(e: &Env) -> Identifier {
 fn new_auction(e: &Env, id: BytesN<32>, price: BigInt, min_price: BigInt, slope: BigInt) {
     let client = auction::Client::new(e, id);
     client.initialize(
-        &get_contract_id(e),
+        &read_administrator(e),
         &get_token_id(e),
         &price,
         &min_price,
         &slope,
     );
+}
+
+fn bid_auction(e: &Env, id: BytesN<32>, buyer: Identifier) -> bool {
+    let client = auction::Client::new(e, id);
+    client.buy(&buyer)
 }
 
 fn get_ts(e: &Env) -> TimeStamp {
@@ -81,6 +98,11 @@ fn get_bought(e: &Env, id: BytesN<16>) -> Office {
 
 fn remove_bought(e: &Env, id: BytesN<16>) {
     let key = DataKey::Bought(id);
+    e.data().remove(key);
+}
+
+fn remove_for_sale(e: &Env, id: BytesN<16>) {
+    let key = DataKey::ForSale(id);
     e.data().remove(key);
 }
 
@@ -165,7 +187,26 @@ fn read_nonce(e: &Env, id: &Identifier) -> BigInt {
         .unwrap()
 }
 
-pub trait VaultContractTrait {
+fn make_new_office(
+    e: &Env,
+    id: BytesN<16>,
+    auction: BytesN<32>,
+    price: BigInt,
+    min_price: BigInt,
+    slope: BigInt,
+) {
+    new_auction(e, auction.clone(), price, min_price, slope);
+    put_for_sale(e, id, auction);
+}
+
+fn get_office_price(e: &Env, id: BytesN<16>) -> BigInt {
+    let auction_id = get_for_sale(e, id);
+    let client = auction::Client::new(e, auction_id);
+
+    client.get_price()
+}
+
+pub trait PauletteContractTrait {
     // Sets the admin and the vault's token id
     fn initialize(e: Env, admin: Identifier, token_id: BytesN<32>);
 
@@ -176,9 +217,22 @@ pub trait VaultContractTrait {
 
     fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier);
 
+    fn get_price(e: Env, id: BytesN<16>) -> BigInt;
+
+    fn new_office(
+        e: Env,
+        admin: Auth,
+        id: BytesN<16>,
+        auction: BytesN<32>,
+        price: BigInt,
+        min_price: BigInt,
+        slope: BigInt,
+    );
+
     /// remove office from Bought, add it to ForSale, create new dutch auction contract with the given ID
     fn revoke(
         e: Env,
+        admin: Auth,
         id: BytesN<16>,
         auction: BytesN<32>,
         price: BigInt,
@@ -187,10 +241,10 @@ pub trait VaultContractTrait {
     );
 }
 
-pub struct VaultContract;
+pub struct PauletteContract;
 
 #[contractimpl]
-impl VaultContractTrait for VaultContract {
+impl PauletteContractTrait for PauletteContract {
     fn initialize(e: Env, admin: Identifier, token_id: BytesN<32>) {
         if has_administrator(&e) {
             panic!("admin is already set");
@@ -204,19 +258,67 @@ impl VaultContractTrait for VaultContract {
         read_nonce(&e, &read_administrator(&e))
     }
 
-    fn buy(e: Env, id: BytesN<16>, buyer: Identifier) {}
+    fn buy(e: Env, id: BytesN<16>, buyer: Identifier) {
+        let auction_id = get_for_sale(&e, id.clone());
+        let auction_result = bid_auction(&e, auction_id, buyer.clone());
+
+        // explicit handle
+        if !auction_result {
+            panic!("bidding failed")
+        }
+
+        remove_for_sale(&e, id.clone());
+        put_bought(
+            &e,
+            id,
+            Office {
+                user: buyer,
+                expires: get_ts(&e).add(TimeStamp(604800)),
+                latest: get_ts(&e),
+            },
+        )
+    }
 
     // has payer since the contract doesn't care if its the user who pays the office, just that someone is.
     fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier) {}
 
-    fn revoke(
+    fn new_office(
         e: Env,
+        admin: Auth,
         id: BytesN<16>,
         auction: BytesN<32>,
         price: BigInt,
         min_price: BigInt,
         slope: BigInt,
     ) {
+        // TODO: check admin
+
+        if e.data().has(DataKey::ForSale(id.clone())) {
+            panic!("id already exists")
+        }
+
+        if e.data().has(DataKey::Bought(id.clone())) {
+            panic!("id already exists")
+        }
+
+        make_new_office(&e, id, auction, price, min_price, slope);
+    }
+
+    fn get_price(e: Env, id: BytesN<16>) -> BigInt {
+        get_office_price(&e, id)
+    }
+
+    fn revoke(
+        e: Env,
+        admin: Auth,
+        id: BytesN<16>,
+        auction: BytesN<32>,
+        price: BigInt,
+        min_price: BigInt,
+        slope: BigInt,
+    ) {
+        // TODO: check admin
+
         let office = get_bought(&e, id.clone());
 
         if office.expires < get_ts(&e) {
@@ -224,7 +326,6 @@ impl VaultContractTrait for VaultContract {
         }
 
         remove_bought(&e, id.clone());
-        new_auction(&e, auction.clone(), price, min_price, slope);
-        put_for_sale(&e, id, auction);
+        make_new_office(&e, id, auction, price, min_price, slope);
     }
 }

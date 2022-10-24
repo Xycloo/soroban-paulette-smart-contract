@@ -7,7 +7,7 @@ mod test;
 pub mod testutils;
 
 use soroban_auth::{Identifier, Signature};
-use soroban_sdk::{contractimpl, contracttype, BigInt, BytesN, Env};
+use soroban_sdk::{bigint, contractimpl, contracttype, BigInt, BytesN, Env};
 
 mod token {
     soroban_sdk::contractimport!(file = "./soroban_token_spec.wasm");
@@ -29,6 +29,7 @@ trait Arithmetic<Rhs = Self> {
 pub enum DataKey {
     TokenId,
     Admin,
+    Tax,
     ForSale(BytesN<16>),
     Bought(BytesN<16>),
     Balance(Identifier),
@@ -129,6 +130,16 @@ fn get_id_balance(e: &Env, id: Identifier) -> BigInt {
 fn put_token_id(e: &Env, token_id: BytesN<32>) {
     let key = DataKey::TokenId;
     e.data().set(key, token_id);
+}
+
+fn put_tax(e: &Env, amount: BigInt) {
+    let key = DataKey::Tax;
+    e.data().set(key, amount);
+}
+
+fn get_tax(e: &Env) -> BigInt {
+    let key = DataKey::Tax;
+    e.data().get(key).unwrap().unwrap()
 }
 
 fn get_token_id(e: &Env) -> BytesN<32> {
@@ -280,7 +291,9 @@ impl PauletteContractTrait for PauletteContract {
     }
 
     // has payer since the contract doesn't care if its the user who pays the office, just that someone is.
-    fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier) {}
+    fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier) {
+        transfer_in_vault(&e, payer, get_tax(&e));
+    }
 
     fn new_office(
         e: Env,

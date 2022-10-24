@@ -1,4 +1,11 @@
 #![no_std]
+#![warn(
+    unused,
+    future_incompatible,
+    nonstandard_style,
+    rust_2018_idioms,
+    missing_docs
+)]
 
 #[cfg(feature = "testutils")]
 extern crate std;
@@ -7,7 +14,7 @@ mod test;
 pub mod testutils;
 
 use soroban_auth::{Identifier, Signature};
-use soroban_sdk::{bigint, contractimpl, contracttype, BigInt, BytesN, Env};
+use soroban_sdk::{contractimpl, contracttype, BigInt, BytesN, Env};
 
 mod token {
     soroban_sdk::contractimport!(file = "./soroban_token_spec.wasm");
@@ -18,6 +25,7 @@ mod auction {
     soroban_sdk::contractimport!(file = "./soroban_dutch_auction_contract.wasm");
 }
 
+// Perform arithmetic ops on custom types
 trait Arithmetic<Rhs = Self> {
     type Output;
 
@@ -26,25 +34,33 @@ trait Arithmetic<Rhs = Self> {
 
 #[derive(Clone)]
 #[contracttype]
+/// Keys for the contract data
 pub enum DataKey {
+    /// What standard token to use in the contract
     TokenId,
+    /// Contract admin
     Admin,
+    /// Tax to pay to keep the office after a week
     Tax,
+    /// Key for offices that are for sale
     ForSale(BytesN<16>),
+    /// Key for offices that have been bought
     Bought(BytesN<16>),
-    Balance(Identifier),
+    /// Admin nonce
     Nonce(Identifier),
 }
 
 #[derive(Clone)]
 #[contracttype]
+/// Auth type to wrap admin signature and nonce together
 pub struct Auth {
     pub sig: Signature,
     pub nonce: BigInt,
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
 #[contracttype]
+/// Timestamp type to enforce explicitness
 pub struct TimeStamp(pub u64);
 
 impl Arithmetic<TimeStamp> for TimeStamp {
@@ -57,14 +73,10 @@ impl Arithmetic<TimeStamp> for TimeStamp {
 
 #[derive(Clone)]
 #[contracttype]
+/// Office struct, stored with key DataKey::Bought(id)
 pub struct Office {
     pub user: Identifier,
     pub expires: TimeStamp,
-    pub latest: TimeStamp,
-}
-
-fn get_contract_id(e: &Env) -> Identifier {
-    Identifier::Contract(e.get_current_contract())
 }
 
 fn new_auction(e: &Env, id: BytesN<32>, price: BigInt, min_price: BigInt, slope: BigInt) {
@@ -117,16 +129,6 @@ fn get_for_sale(e: &Env, id: BytesN<16>) -> BytesN<32> {
     e.data().get(key).unwrap().unwrap()
 }
 
-fn put_id_balance(e: &Env, id: Identifier, amount: BigInt) {
-    let key = DataKey::Balance(id);
-    e.data().set(key, amount);
-}
-
-fn get_id_balance(e: &Env, id: Identifier) -> BigInt {
-    let key = DataKey::Balance(id);
-    e.data().get(key).unwrap_or(Ok(BigInt::zero(&e))).unwrap()
-}
-
 fn put_token_id(e: &Env, token_id: BytesN<32>) {
     let key = DataKey::TokenId;
     e.data().set(key, token_id);
@@ -147,30 +149,14 @@ fn get_token_id(e: &Env) -> BytesN<32> {
     e.data().get(key).unwrap().unwrap()
 }
 
-fn get_token_balance(e: &Env) -> BigInt {
-    let contract_id = get_token_id(e);
-    token::Client::new(e, contract_id).balance(&get_contract_id(e))
-}
-
-fn transfer(e: &Env, to: Identifier, amount: BigInt) {
-    let client = token::Client::new(e, get_token_id(e));
-    client.xfer(
-        &Signature::Invoker,
-        &client.nonce(&Signature::Invoker.identifier(e)),
-        &to,
-        &amount,
-    );
-}
-
 fn transfer_in_vault(e: &Env, from: Identifier, amount: BigInt) {
     let client = token::Client::new(e, get_token_id(e));
-    let vault_id = get_contract_id(e);
 
     client.xfer_from(
         &Signature::Invoker,
-        &BigInt::zero(&e),
+        &BigInt::zero(e),
         &from,
-        &vault_id,
+        &read_administrator(e),
         &amount,
     )
 }
@@ -190,12 +176,40 @@ fn write_administrator(e: &Env, id: Identifier) {
     e.data().set(key, id);
 }
 
+fn check_admin(e: &Env, auth: &Signature) {
+    let auth_id = auth.identifier(e);
+    if auth_id != read_administrator(e) {
+        panic!("not authorized by admin")
+    }
+}
+
 fn read_nonce(e: &Env, id: &Identifier) -> BigInt {
     let key = DataKey::Nonce(id.clone());
     e.data()
         .get(key)
         .unwrap_or_else(|| Ok(BigInt::zero(e)))
         .unwrap()
+}
+
+fn verify_and_consume_nonce(e: &Env, auth: &Signature, expected_nonce: &BigInt) {
+    match auth {
+        Signature::Invoker => {
+            if BigInt::zero(&e) != expected_nonce {
+                panic!("nonce should be zero for Invoker")
+            }
+            return;
+        }
+        _ => {}
+    }
+
+    let id = auth.identifier(&e);
+    let key = DataKey::Nonce(id.clone());
+    let nonce = read_nonce(e, &id);
+
+    if nonce != expected_nonce {
+        panic!("incorrect nonce")
+    }
+    e.data().set(key, &nonce + 1);
 }
 
 fn make_new_office(
@@ -218,18 +232,22 @@ fn get_office_price(e: &Env, id: BytesN<16>) -> BigInt {
 }
 
 pub trait PauletteContractTrait {
-    // Sets the admin and the vault's token id
-    fn initialize(e: Env, admin: Identifier, token_id: BytesN<32>);
+    /// Sets the admin and the Royal vault's token id
+    fn initialize(e: Env, admin: Identifier, token_id: BytesN<32>, tax: BigInt);
 
-    // Returns the nonce for the admin
+    /// Returns the nonce for the admin
     fn nonce(e: Env) -> BigInt;
 
+    /// Call to buy an office
     fn buy(e: Env, id: BytesN<16>, buyer: Identifier);
 
+    /// Call to pay taxes for a given office
     fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier);
 
+    /// Query the price of a given office
     fn get_price(e: Env, id: BytesN<16>) -> BigInt;
 
+    /// Create a new office (requires admin auth)
     fn new_office(
         e: Env,
         admin: Auth,
@@ -256,13 +274,14 @@ pub struct PauletteContract;
 
 #[contractimpl]
 impl PauletteContractTrait for PauletteContract {
-    fn initialize(e: Env, admin: Identifier, token_id: BytesN<32>) {
+    fn initialize(e: Env, admin: Identifier, token_id: BytesN<32>, tax: BigInt) {
         if has_administrator(&e) {
             panic!("admin is already set");
         }
 
         write_administrator(&e, admin);
-        put_token_id(&e, token_id)
+        put_token_id(&e, token_id);
+        put_tax(&e, tax);
     }
 
     fn nonce(e: Env) -> BigInt {
@@ -285,14 +304,19 @@ impl PauletteContractTrait for PauletteContract {
             Office {
                 user: buyer,
                 expires: get_ts(&e).add(TimeStamp(604800)),
-                latest: get_ts(&e),
             },
         )
     }
 
-    // has payer since the contract doesn't care if its the user who pays the office, just that someone is.
+    // the contract doesn't care if its the user who pays the office, just that someone is.
     fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier) {
         transfer_in_vault(&e, payer, get_tax(&e));
+        let mut office = get_bought(&e, id.clone());
+
+        // dilemma: allow to pay taxes even after they have expired if the admin doesn't revoke the office?
+        office.expires = office.expires.add(TimeStamp(604800));
+
+        put_bought(&e, id, office);
     }
 
     fn new_office(
@@ -304,7 +328,8 @@ impl PauletteContractTrait for PauletteContract {
         min_price: BigInt,
         slope: BigInt,
     ) {
-        // TODO: check admin
+        check_admin(&e, &admin.sig);
+        verify_and_consume_nonce(&e, &admin.sig, &admin.nonce);
 
         if e.data().has(DataKey::ForSale(id.clone())) {
             panic!("id already exists")
@@ -330,11 +355,12 @@ impl PauletteContractTrait for PauletteContract {
         min_price: BigInt,
         slope: BigInt,
     ) {
-        // TODO: check admin
+        check_admin(&e, &admin.sig);
+        verify_and_consume_nonce(&e, &admin.sig, &admin.nonce);
 
         let office = get_bought(&e, id.clone());
 
-        if office.expires < get_ts(&e) {
+        if office.expires > get_ts(&e) {
             panic!("office is not expired yet");
         }
 

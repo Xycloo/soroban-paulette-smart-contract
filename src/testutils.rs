@@ -3,7 +3,7 @@
 use crate::{Auth, PauletteContractClient};
 use soroban_auth::Identifier;
 
-use soroban_sdk::{accounts::Account, AccountId, BigInt, BytesN, Env};
+use soroban_sdk::{AccountId, BigInt, BytesN, Env};
 
 pub fn register_test_contract(e: &Env, contract_id: &[u8; 32]) {
     let contract_id = BytesN::from_array(e, contract_id);
@@ -27,9 +27,9 @@ impl PauletteContract {
         }
     }
 
-    pub fn initialize(&self, admin: &Identifier, token_id: &[u8; 32]) {
+    pub fn initialize(&self, admin: &Identifier, token_id: &[u8; 32], tax: BigInt) {
         self.client()
-            .initialize(admin, &BytesN::from_array(&self.env, token_id));
+            .initialize(admin, &BytesN::from_array(&self.env, token_id), &tax);
     }
 
     pub fn nonce(&self) -> BigInt {
@@ -67,6 +67,10 @@ impl PauletteContract {
         self.client().buy(&id, &buyer);
     }
 
+    pub fn pay_tax(&self, id: BytesN<16>, payer: Identifier) {
+        self.client().pay_tax(&id, &payer)
+    }
+
     pub fn revoke(
         &self,
         admin: AccountId,
@@ -77,7 +81,7 @@ impl PauletteContract {
         slope: BigInt,
     ) {
         self.env.set_source_account(&admin);
-        self.client().new_office(
+        self.client().revoke(
             &Auth {
                 sig: soroban_auth::Signature::Invoker,
                 nonce: BigInt::zero(&self.env),

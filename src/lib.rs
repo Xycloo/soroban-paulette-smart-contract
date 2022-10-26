@@ -63,6 +63,12 @@ pub struct Auth {
 /// Timestamp type to enforce explicitness
 pub struct TimeStamp(pub u64);
 
+impl TimeStamp {
+    fn current(e: &Env) -> Self {
+        Self(e.ledger().timestamp())
+    }
+}
+
 impl Arithmetic<TimeStamp> for TimeStamp {
     type Output = TimeStamp;
 
@@ -93,10 +99,6 @@ fn new_auction(e: &Env, id: BytesN<32>, price: BigInt, min_price: BigInt, slope:
 fn bid_auction(e: &Env, id: BytesN<32>, buyer: Identifier) -> bool {
     let client = auction::Client::new(e, id);
     client.buy(&buyer)
-}
-
-fn get_ts(e: &Env) -> TimeStamp {
-    TimeStamp(e.ledger().timestamp())
 }
 
 fn put_bought(e: &Env, id: BytesN<16>, bought: Office) {
@@ -149,7 +151,7 @@ fn get_token_id(e: &Env) -> BytesN<32> {
     e.data().get(key).unwrap().unwrap()
 }
 
-fn transfer_in_vault(e: &Env, from: Identifier, amount: BigInt) {
+fn transfer_to_admin(e: &Env, from: Identifier, amount: BigInt) {
     let client = token::Client::new(e, get_token_id(e));
 
     client.xfer_from(
@@ -303,14 +305,14 @@ impl PauletteContractTrait for PauletteContract {
             id,
             Office {
                 user: buyer,
-                expires: get_ts(&e).add(TimeStamp(604800)),
+                expires: TimeStamp::current(&e).add(TimeStamp(604800)),
             },
         )
     }
 
     // the contract doesn't care if its the user who pays the office, just that someone is.
     fn pay_tax(e: Env, id: BytesN<16>, payer: Identifier) {
-        transfer_in_vault(&e, payer, get_tax(&e));
+        transfer_to_admin(&e, payer, get_tax(&e));
         let mut office = get_bought(&e, id.clone());
 
         // dilemma: allow to pay taxes even after they have expired if the admin doesn't revoke the office?
@@ -360,7 +362,7 @@ impl PauletteContractTrait for PauletteContract {
 
         let office = get_bought(&e, id.clone());
 
-        if office.expires > get_ts(&e) {
+        if office.expires > TimeStamp::current(&e) {
             panic!("office is not expired yet");
         }
 

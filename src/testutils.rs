@@ -93,11 +93,4 @@ impl PauletteContract {
             &slope,
         )
     }
-
-    /*
-    TODO: revoke testutil
-    pub fn revoke(&self)  {
-            self.client().revoke(id, auction, price, min_price, slope)
-        }
-    */
 }

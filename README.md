@@ -144,6 +144,68 @@ pub struct Office {
 }
 ```
 
+## Data helpers: writing and reading contract data
+To interact with contract data in soroban, we use `environment.data()`:
+- `environment.data().get(key)`: gets the value stored on the contract's data which is associated the the key `key`.
+- `environment.data().set(key, value)`: creates or edits the value stored on the contract's data which is associated the the key `key` by setting `value` as value.
+
+It is helpful to have functions perform the action of interacting with specific keys of the contract data:
+
+```rust
+
+fn put_bought(e: &Env, id: BytesN<16>, bought: Office) {
+    let key = DataKey::Bought(id);
+    e.data().set(key, bought);
+}
+
+fn get_bought(e: &Env, id: BytesN<16>) -> Office {
+    let key = DataKey::Bought(id);
+    e.data().get(key).unwrap().unwrap()
+}
+
+fn remove_bought(e: &Env, id: BytesN<16>) {
+    let key = DataKey::Bought(id);
+    e.data().remove(key);
+}
+
+fn remove_for_sale(e: &Env, id: BytesN<16>) {
+    let key = DataKey::ForSale(id);
+    e.data().remove(key);
+}
+
+fn put_for_sale(e: &Env, id: BytesN<16>, auction: BytesN<32>) {
+    let key = DataKey::ForSale(id);
+    e.data().set(key, auction)
+}
+
+fn get_for_sale(e: &Env, id: BytesN<16>) -> BytesN<32> {
+    let key = DataKey::ForSale(id);
+    e.data().get(key).unwrap().unwrap()
+}
+
+fn put_token_id(e: &Env, token_id: BytesN<32>) {
+    let key = DataKey::TokenId;
+    e.data().set(key, token_id);
+}
+
+fn put_tax(e: &Env, amount: BigInt) {
+    let key = DataKey::Tax;
+    e.data().set(key, amount);
+}
+
+fn get_tax(e: &Env) -> BigInt {
+    let key = DataKey::Tax;
+    e.data().get(key).unwrap().unwrap()
+}
+
+fn get_token_id(e: &Env) -> BytesN<32> {
+    let key = DataKey::TokenId;
+    e.data().get(key).unwrap().unwrap()
+}
+
+```
+
+
 ## Interacting with the dutch auction contract
 If you haven't already I recommed checking the [soroban-dutch-auction-contract README](https://github.com/Xycloo/soroban-dutch-auction-contract) to better understand what happens in the auctions.
 To create a new auction, we have to initialize an existing auction contract (which needs to be registered to the environment). This means that rather than deploying the auction contract directly from the paulette contract through `env.deployer()`, we will leave the deployment of the auction contract to another contract (or manually), and only require the id to initialize the contract (i.e creating the auction).
@@ -171,6 +233,7 @@ fn new_auction(e: &Env, id: BytesN<32>, price: BigInt, min_price: BigInt, slope:
 ```
 
 ### Making a bid
+To place a bid we just create a new client (again) and call the buy function:
 
 ```rust
 fn bid_auction(e: &Env, id: BytesN<32>, buyer: Identifier) -> bool {
@@ -178,6 +241,33 @@ fn bid_auction(e: &Env, id: BytesN<32>, buyer: Identifier) -> bool {
     client.buy(&buyer)
 }
 ```
+
+## Interacting with the token contract
+Since we are going to need to transfer value from the buyers to the admin, we will need to use the standard token contract. More specifically, we will use the `token_client::xfer_from()` method which allows the contract to transfer a certain amount of the token from the buyer to a cecrtain account, assuming that the buyer has previously allowed this transaction (using an allowance).
+
+So, remembering that the `xfer_from` method looks like this:
+
+```rust
+fn xfer_from(e: Env, spender: Signature, nonce: BigInt, from: Identifier, to: Identifier, amount: BigInt);
+```
+
+We can write the following function, where `&read_administrator(e)` simply reads the ID of the admin. We'll dive further into working with the admin in the next section.
+
+```rust
+fn transfer_to_admin(e: &Env, from: Identifier, amount: BigInt) {
+    let client = token::Client::new(e, get_token_id(e));
+
+    client.xfer_from(
+        &Signature::Invoker,
+        &BigInt::zero(e),
+        &from,
+        &read_administrator(e), // reads the administrator's id
+        &amount,
+    )
+}
+```
+
+
 
 ## todos
 

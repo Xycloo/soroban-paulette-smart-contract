@@ -1,7 +1,7 @@
 # Soroban Offices Smart Contract
 
 ### Inspiration
-The paulette, was a law enforced by France in the beginnings of the 17th century. It allowed the king to sell the ownership of public offices (making them hereditary). The owners of these public offices had to pay a tax each $\Delta t$ to keep a bought public office. These offices expire every $\Delta t$ and the the owner of each office has to pay a tax to maintain the ownership, if they didn't pay this tax, the office could be revoked by the king.
+The Paulette, was a law enforced by France in the beginning of the 17th century. It allowed the king to sell the ownership of public offices (making them hereditary). The owners of these public offices had to pay a tax each $\Delta t$ to keep a bought public office. These offices expire every $\Delta t$ and the owner of each office has to pay a tax to maintain the ownership, if they didn't pay this tax, the office could be revoked by the king.
 
 ## Actual implementation Abstract
 The contract admin can create new offices and put them for sale by invoking the [Soroban Dutch Auction Contract](https://github.com/Xycloo/soroban-dutch-auction-contract). This means that these offices start with a certain price which decreases with time. Users can then buy these offices at the auction's price and become the owners. The offices expire after a week ( $604800s$ ), and can be renewed by paying a tax (ideally less than the price at which the office was bought). If more than a week goes by and the owner hasn't paid the tax yet, the admin can revoke the office and put it for sale in an auction again. 
@@ -15,7 +15,7 @@ This contract is quite complete in terms of used functionalities, by looking at 
 - using the standard token implementation to transfer tokens.
 - manage and test the auth process for an administrator.
 
-This contract is also well documented even though it's an unusual situation (a protocol has some kind of public offices that hold a certain value and the owners have to pay periodically to keep the office). Anyways, while reading this article it's a good idea to also refer to the comments (or docs) in the showed code fragments.
+This contract is also well documented even though it's an unusual situation (a protocol has some kind of public offices that hold a certain value and the owners have to pay periodically to keep the office). Anyways, while reading this article it's a good idea to also refer to the comments (or docs) in the shown code fragments.
 
 # Writing the Contract
 
@@ -56,7 +56,7 @@ You can also go ahead and create the `test.rs` and `testutils.rs` files for when
 You're now all set and can start building the contract!
 
 ## Importing Contracts
-As previously hinted we are going to import two contracts: the standard token contract and the dutch auction contract. To do so, you'll first have to build (or dowload) the two WASM binaries of the contracts (which you can find in the repo), and then use the `contractimport!` macro:
+As previously hinted we are going to import two contracts: the standard token contract and the dutch auction contract. To do so, you'll first have to build (or download) the two WASM binaries of the contracts (which you can find in the repo), and then use the `contractimport!` macro:
 
 ```rust
 mod token {
@@ -72,7 +72,7 @@ mod auction {
 Over the next paragraphs, I'll dive into calling these two contracts from our "paulette" contract.
 
 ## Data Keys and Custom Types
-Contract data works pretty much like a key-value store in Soroban, that means that things can get messy if we don't enforce a strong naming system for our keys. That is why we will define the `DataKey` enum:
+Contract data works pretty much like a key-value store in Soroban, which means that things can get messy if we don't enforce a strong naming system for our keys. That is why we will define the `DataKey` enum:
 
 ```rust
 #[derive(Clone)]
@@ -95,7 +95,7 @@ pub enum DataKey {
 ```
 
 ### About custom types
-On a produciton-level contract, it might be better to achieve further clarity in our code by creating new types or variants for values that can become ambiguous for not having their own descriptive type. For example, I have created a `TimeStamp` type for timestamps rather than using a `u64` type directly:
+On a production-level contract, it might be better to achieve further clarity in our code by creating new types or variants for values that can become ambiguous for not having their own descriptive type. For example, I have created a `TimeStamp` type for timestamps rather than using a `u64` type directly:
 
 ```rust
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
@@ -134,7 +134,7 @@ impl TimeStamp {
 }
 ```
 
-Notice that I am using `environment.ledger().timestamp()` to access ledger's current timestamp. Remember that in order to make smart contracts efficient and scalable, there is not much data that contracts are allowed to fetch. Still, things like the ledger's timestamp, protocol version and network passphrase can be accessed through `environment.ledger()`.
+Notice that I am using `environment.ledger().timestamp()` to access the ledger's current timestamp. Remember that in order to make smart contracts efficient and scalable, there is not much data that contracts are allowed to fetch. Still, things like the ledger's timestamp, protocol version and network passphrase can be accessed through `environment.ledger()`.
 
 I have also added an `Auth` type to wrap better the admin auth (signature and nonce), and an office struct which will be the one stored in the contract data for each contract the admin creates and revokes:
 
@@ -158,8 +158,8 @@ pub struct Office {
 
 ## Data helpers: writing and reading contract data
 To interact with contract data in soroban, we use `environment.data()`:
-- `environment.data().get(key)`: gets the value stored on the contract's data which is associated the the key `key`.
-- `environment.data().set(key, value)`: creates or edits the value stored on the contract's data which is associated the the key `key` by setting `value` as value.
+- `environment.data().get(key)`: gets the value stored on the contract's data which is associated with the key `key`.
+- `environment.data().set(key, value)`: creates or edits the value stored on the contract's data which is associated with the key `key` by setting `value` as value.
 
 It is helpful to have functions perform the action of interacting with specific keys of the contract data:
 
@@ -219,7 +219,7 @@ fn get_token_id(e: &Env) -> BytesN<32> {
 
 
 ## Interacting with the dutch auction contract
-If you haven't already I recommed checking the [soroban-dutch-auction-contract README](https://github.com/Xycloo/soroban-dutch-auction-contract) to better understand what happens in the auctions.
+If you haven't already I recommend checking the [soroban-dutch-auction-contract README](https://github.com/Xycloo/soroban-dutch-auction-contract) to better understand what happens in the auctions.
 To create a new auction, we have to initialize an existing auction contract (which needs to be registered to the environment). This means that rather than deploying the auction contract directly from the paulette contract through `env.deployer()`, we will leave the deployment of the auction contract to another contract (or manually), and only require the id to initialize the contract (i.e creating the auction).
 
 Before initializing the contract we need a client to interact with it, we create one with:
@@ -255,7 +255,7 @@ fn bid_auction(e: &Env, id: BytesN<32>, buyer: Identifier) -> bool {
 ```
 
 ## Interacting with the token contract
-Since we are going to need to transfer value from the buyers to the admin, we will need to use the standard token contract. More specifically, we will use the `token_client::xfer_from()` method which allows the contract to transfer a certain amount of the token from the buyer to a cecrtain account, assuming that the buyer has previously allowed this transaction (using an allowance).
+Since we are going to need to transfer value from the buyers to the admin, we will need to use the standard token contract. More specifically, we will use the `token_client::xfer_from()` method which allows the contract to transfer a certain amount of the token from the buyer to a certain account, assuming that the buyer has previously allowed this transaction (using an allowance).
 
 So, remembering that the `xfer_from` method looks like this:
 
@@ -402,7 +402,7 @@ impl PauletteContractTrait for PauletteContract {
 ```
 
 ## Initialization
-This step is really just about one thing: setting in the contract's data the params taht the contract needs to start working:
+This step is really just about one thing: setting in the contract's data the params that the contract needs to start working:
 - the admin
 - what token to use as currency (usdc for instance)
 - how much taxes users have to pay in terms of the contract's currency (taxes in usdc for instance).
@@ -419,7 +419,7 @@ This step is really just about one thing: setting in the contract's data the par
     }
 ```
 
-Remember that all these function we are using we already have defined, take a glance at the beginning of the article to see what they do.
+Remember that all these functions we are using we already have defined, take a glance at the beginning of the article to see what they do.
 
 ## Creating a new office
 This is slightly more complex than the initialization, in fact we have to:
@@ -469,14 +469,14 @@ fn make_new_office(
     put_for_sale(e, id, auction);
 }
 ```
- Remember that [we have already talked about creating and bidding auctions](#interacting-with-the-dutch-auction-contract), and that pur for sale is a simple function (which we have already seen in the beginning of the article) that writes the contract data.
+ Remember that [we have already talked about creating and bidding auctions](#interacting-with-the-dutch-auction-contract), and that put for sale is a simple function (which we have already seen in the beginning of the article) that writes the contract data.
 
 ## Buying an office that is for sale
 
 Buying is also quite complex compared to the `initialize` method, we need to:
 - get the specified office's auction id (which, if you remember, we had stored as the value for the office's id).
-- make a bidding to the auction (i.e buying the office).
-- removing the `DataKey::ForSale(id)` data entry since we are going to add a `DataKey::Bought` entry thorugh the `put_bought()` function, which has an `Office` struct as value where `office.user` is the buyer and `office.expires` (the expiration date) is the current ledger timestamp + 604800 (a week). "Why have such value hardcoded in the contract rather than setting it upon initialization?", you may be asking; there is no particular reason for this coiche, I hardcoded it to show that it is also a viable option (and sometimes mandatory). Of course you could add another parameter in the `initialize` method, and write a put and get functions for the new enum variant `DataKey::Interval`.
+- make a bid to the auction (i.e buying the office).
+- removing the `DataKey::ForSale(id)` data entry since we are going to add a `DataKey::Bought` entry through the `put_bought()` function, which has an `Office` struct as value where `office.user` is the buyer and `office.expires` (the expiration date) is the current ledger timestamp + 604800 (a week). "Why have such value hardcoded in the contract rather than setting it upon initialization?", you may be asking; there is no particular reason for this choice, I hardcoded it to show that it is also a viable option (and sometimes mandatory). Of course you could add another parameter in the `initialize` method, and write a put and get function for the new enum variant `DataKey::Interval`.
 
 ```rust
 fn buy(e: Env, id: BytesN<16>, buyer: Identifier) {
@@ -556,7 +556,7 @@ fn revoke(
 We have now written our contract, and need proper testing to assert that it works as expected.
 
 ### Testutils
-Our testutils will act as a skeleton contract that interacts with the actual contract but by easing some processes such as setting the environment source account when needed (admin invokations):
+Our testutils will act as a skeleton contract that interacts with the actual contract but by easing some processes such as setting the environment source account when needed (admin invocations):
 
 ```rust
 #![cfg(any(test, feature = "testutils"))]
@@ -674,7 +674,7 @@ You can check out the tests in the `test.rs` file. The tests are intuitive but I
 ```
 This is needed because the price of the offices changes over time (dutch auction), and also because the offices expire over time.
 
-- we are using the `approve` method from the token contract to allow the paulette contract to tranfer the tokens out of the buyers (if you are confused by this behaviour, read [this section again](#interacting-with-the-token-contract)):
+- we are using the `approve` method from the token contract to allow the paulette contract to transfer the tokens out of the buyers (if you are confused by this behaviour, read [this section again](#interacting-with-the-token-contract)):
 ```rus
 usdc_token.with_source_account(&user2).approve(
         &Signature::Invoker,

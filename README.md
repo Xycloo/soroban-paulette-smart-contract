@@ -41,7 +41,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 testutils = ["soroban-sdk/testutils", "soroban-auth/testutils"]
 
-[dependencies]0
+[dependencies]
 soroban-sdk = "0.1.0"
 soroban-auth = "0.1.0"
 
@@ -469,7 +469,7 @@ fn make_new_office(
     put_for_sale(e, id, auction);
 }
 ```
- Remember that [we have already talked about creating and bidding auctions](#Interacting-with-the-dutch-auction-contract), and that pur for sale is a simple function (which we have already seen in the beginning of the article) that writes the contract data.
+ Remember that [we have already talked about creating and bidding auctions](#interacting-with-the-dutch-auction-contract), and that pur for sale is a simple function (which we have already seen in the beginning of the article) that writes the contract data.
 
 ## Buying an office that is for sale
 
@@ -674,7 +674,7 @@ You can check out the tests in the `test.rs` file. The tests are intuitive but I
 ```
 This is needed because the price of the offices changes over time (dutch auction), and also because the offices expire over time.
 
-- we are using the `approve` method from the token contract to allow the paulette contract to tranfer the tokens out of the buyers (if you are confused by this behaviour, read [this section again](#Interacting-with-the-token-contract)):
+- we are using the `approve` method from the token contract to allow the paulette contract to tranfer the tokens out of the buyers (if you are confused by this behaviour, read [this section again](#interacting-with-the-token-contract)):
 ```rus
 usdc_token.with_source_account(&user2).approve(
         &Signature::Invoker,
